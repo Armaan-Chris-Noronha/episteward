@@ -18,7 +18,11 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "httpx>=0.27.0",
     "aiohttp>=3.9.0",
+    "openenv>=0.1.0",
 ]
+
+[project.scripts]
+server = "server.app:main"
 
 [project.optional-dependencies]
 dev = [
@@ -29,4 +33,4 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["episteward*"]
+include = ["episteward*", "server*"]

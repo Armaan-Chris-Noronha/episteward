@@ -4,21 +4,16 @@ Task 3 — NetworkOutbreakResponse (Hard).
 10-hospital network, CRK spreading, finite colistin budget.
 Episode length: 30 steps.
 
-The agent must:
-  1. Trace phylogenetic spread from transfer logs and resistance typing
-  2. Issue hospital-level containment orders (economic penalty per order)
-  3. Allocate colistin budget (fixed 10 courses total)
-  4. Maintain treatment for non-CRK patients simultaneously
+Initial state:
+  - 2 confirmed infected hospitals: H1 and H3 (6 CRK patients total)
+  - 3 at-risk hospitals: H2, H4, H5 (adjacent to infected hospitals)
+  - 5 currently safe hospitals: H6–H10
 
-Reward formula:
-    R = α·lives_saved_ratio - β·colistin_overspend - γ·resistance_amplification_events
-    α=0.6, β=0.25, γ=0.15
-
-Ground truth:
-  - source_hospital: where CRK originated
-  - transmission_tree: graph of spread events
-  - total_crk_patients: final infected count
-  - lives_at_risk: patients who need colistin
+Reward:
+  0.6·(0.5·containment_score + 0.5·lives_saved_ratio)
+  − 0.25·colistin_overspend/budget
+  − 0.15·resistance_events/20
+  Clamped to [0, 1].
 """
 
 from __future__ import annotations
@@ -27,25 +22,73 @@ import logging
 from typing import Any, Dict, List, Set, Tuple
 
 from episteward.models import EpiAction, EpiObservation
-from episteward.state import HospitalState, PatientRecord
+from episteward.state import HospitalState
 from episteward.tasks.base import BaseTask
 
 logger = logging.getLogger(__name__)
 
-_ALPHA = 0.6
-_BETA = 0.25
-_GAMMA = 0.15
 _COLISTIN_BUDGET = 10
-
-# 10-hospital network (simplified; full topology in hospital_network.json)
 _HOSPITALS = [f"H{i}" for i in range(1, 11)]
-_SOURCE_HOSPITAL = "H3"
+
+# 2 confirmed infected hospitals at episode start
+_INFECTED_HOSPITALS: Set[str] = {"H1", "H3"}
+
+# Initial CRK count = |_INFECTED_HOSPITALS| × _PATIENTS_PER_HOSPITAL
+_PATIENTS_PER_HOSPITAL = 3
+_INITIAL_CRK_COUNT = len(_INFECTED_HOSPITALS) * _PATIENTS_PER_HOSPITAL  # 6
+
+# At-risk hospitals: direct neighbours of infected hospitals in the transfer network
+_AT_RISK_HOSPITALS: Set[str] = {"H2", "H4", "H5"}
+
+# Simple inter-hospital transfer network (bidirectional adjacency).
+# Determines CRK spread pathways; mirrors a realistic referral network.
+_HOSPITAL_NETWORK: Dict[str, List[str]] = {
+    "H1":  ["H2", "H4"],
+    "H2":  ["H1", "H3", "H6"],
+    "H3":  ["H2", "H4", "H5"],
+    "H4":  ["H1", "H3", "H6"],
+    "H5":  ["H3", "H7"],
+    "H6":  ["H2", "H4", "H8"],
+    "H7":  ["H5", "H9"],
+    "H8":  ["H6", "H10"],
+    "H9":  ["H7", "H10"],
+    "H10": ["H8", "H9"],
+}
+
+# CRK transmits at 8 % probability per uncontained infected-hospital→neighbour edge per step
+_SPREAD_PROB = 0.08
 
 _INITIAL_PATIENTS: List[Dict[str, Any]] = [
-    {"patient_id": f"H{h}_P{p}", "hospital": f"H{h}", "crk": h == 3 and p == 1}
+    {"patient_id": f"H{h}_P{p}", "hospital": f"H{h}"}
     for h in range(1, 11)
-    for p in range(1, 4)  # 3 patients per hospital = 30 total
+    for p in range(1, _PATIENTS_PER_HOSPITAL + 1)
 ]
+
+
+def _make_patient(spec: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a patient dict; CRK status determined by hospital membership."""
+    hospital = spec["hospital"]
+    crk = hospital in _INFECTED_HOSPITALS
+    return {
+        "patient_id": spec["patient_id"],
+        "ward_id": hospital,
+        "pathogen": "K_pneumoniae_CRK" if crk else "K_pneumoniae",
+        "resistance_frequency": 1.0 if crk else 0.01,
+        "is_isolated": False,
+        "is_treated": False,
+        "culture_pending": False,
+        "culture_result": None,
+        "infection_site": "bloodstream",
+        "symptoms": ["fever", "hypotension", "tachycardia"],
+        "vitals": {
+            "temp_c": 39.1, "hr_bpm": 115, "wbc_k_ul": 19.0,
+            "crp_mg_l": 140.0, "procalcitonin_ng_ml": 5.5,
+        },
+        "treatment_hours_elapsed": 0.0,
+        "transfer_history": [],
+        "antibiotic_history": [],
+        "alive": True,
+    }
 
 
 class NetworkOutbreakResponse(BaseTask):
@@ -58,65 +101,60 @@ class NetworkOutbreakResponse(BaseTask):
         super().__init__()
         self._containment_orders: Set[str] = set()
         self._resistance_events: int = 0
-        self._lives_saved: int = 0
-        self._total_at_risk: int = 0
+        self._lives_saved: int = 0  # colistin treatments on CRK patients within budget
 
     def reset(self, seed: int = 0) -> EpiObservation:
-        """Initialise 10-hospital network with CRK seeded in H3."""
-        self.state = HospitalState(task_id=self.name, episode_seed=seed)
-        self.state.seed(seed)
+        """Initialise 10-hospital network with CRK seeded in H1 and H3."""
+        self.state = HospitalState(active_task=self.name, episode_seed=seed)
         self.state.colistin_budget = _COLISTIN_BUDGET
         self.state.colistin_used = 0
         self._containment_orders = set()
         self._resistance_events = 0
         self._lives_saved = 0
 
-        for spec in _INITIAL_PATIENTS:
-            p = PatientRecord(
-                patient_id=spec["patient_id"],
-                ward_id=spec["hospital"],
-                pathogen="K_pneumoniae_CRK" if spec["crk"] else "K_pneumoniae",
-                resistance_frequency=1.0 if spec["crk"] else 0.01,
-            )
-            self.state.patients[p.patient_id] = p
+        self.state.patients = [_make_patient(spec) for spec in _INITIAL_PATIENTS]
+        self.state.ward_assignments = {
+            p["patient_id"]: p["ward_id"] for p in self.state.patients
+        }
+        self.state.isolation_map = {h: False for h in _HOSPITALS}
 
-        self._total_at_risk = sum(
-            1 for p in self.state.patients.values()
-            if p.resistance_frequency > 0.5
-        )
+        for h in _INFECTED_HOSPITALS:
+            self.state.ward_infection_counts[h] = 1
 
-        self.state.ward_infection_counts[_SOURCE_HOSPITAL] = 1
         self.state.step_number = 1
         return self._make_observation()
 
     def step(self, action: EpiAction) -> Tuple[EpiObservation, bool]:
-        """Apply action (may target a hospital-level patient), spread CRK."""
+        """Apply action to current patient, simulate inter-hospital CRK spread."""
         self._assert_ready()
         assert self.state is not None
 
-        # Determine current focus patient (cycle by step)
         pid = _INITIAL_PATIENTS[(self.state.step_number - 1) % len(_INITIAL_PATIENTS)]["patient_id"]
-        patient = self.state.patients[pid]
-
-        patient.antibiotic_history.append(action.model_dump())
+        patient = self._get_patient(pid)
+        patient["antibiotic_history"].append(action.model_dump())
 
         if action.isolation_order:
-            self._containment_orders.add(patient.ward_id)
-            patient.is_isolated = True
+            self._containment_orders.add(patient["ward_id"])
+            patient["is_isolated"] = True
+            self.state.isolation_map[patient["ward_id"]] = True
 
-        # Colistin allocation
         if action.antibiotic.lower() == "colistin":
             if self.state.colistin_used < self.state.colistin_budget:
                 self.state.colistin_used += 1
-                if patient.resistance_frequency > 0.5:
-                    patient.alive = True
+                if patient["resistance_frequency"] > 0.5:
+                    patient["is_treated"] = True
                     self._lives_saved += 1
             else:
-                logger.warning("Colistin budget exhausted")
+                # Over budget — log only; penalty applied by grader
+                logger.warning(
+                    "Colistin budget exhausted (used=%d, budget=%d)",
+                    self.state.colistin_used,
+                    self.state.colistin_budget,
+                )
+                # Still track the overspend
+                self.state.colistin_used += 1
 
-        # Simulate CRK spread across network
         self._simulate_network_spread()
-
         self.state.step_number += 1
         done = self.state.step_number > self.max_steps
         if done:
@@ -125,72 +163,93 @@ class NetworkOutbreakResponse(BaseTask):
         return self._make_observation(), done
 
     def _simulate_network_spread(self) -> None:
-        """Simplified network spread step."""
+        """
+        Spread CRK along inter-hospital network edges.
+
+        For each uncontained infected hospital, each adjacent hospital that
+        has no containment order gets a Bernoulli(SPREAD_PROB) draw.
+        On success, one susceptible patient in the target hospital becomes CRK.
+        """
         assert self.state is not None
         rng = self.state.rng
 
         crk_hospitals = {
-            p.ward_id for p in self.state.patients.values()
-            if p.resistance_frequency > 0.5 and p.ward_id not in self._containment_orders
+            p["ward_id"] for p in self.state.patients
+            if p["resistance_frequency"] > 0.5
+            and p["ward_id"] not in self._containment_orders
         }
 
-        for h in crk_hospitals:
-            # Each CRK hospital can spread to a random neighbour
-            idx = int(rng.integers(0, len(_HOSPITALS)))
-            target_h = _HOSPITALS[idx]
-            if target_h in self._containment_orders:
-                continue
-            if rng.random() < 0.08:  # β for CRK
-                # Infect first non-CRK patient in target hospital
-                for pid, p in self.state.patients.items():
-                    if p.ward_id == target_h and p.resistance_frequency < 0.5:
-                        p.resistance_frequency = 0.9
-                        self._resistance_events += 1
-                        break
+        for source in list(crk_hospitals):
+            for target in _HOSPITAL_NETWORK.get(source, []):
+                if target in self._containment_orders:
+                    continue
+                if rng.random() < _SPREAD_PROB:
+                    for p in self.state.patients:
+                        if p["ward_id"] == target and p["resistance_frequency"] < 0.5:
+                            p["resistance_frequency"] = 0.9
+                            p["pathogen"] = "K_pneumoniae_CRK"
+                            self._resistance_events += 1
+                            break  # one patient per edge-draw
 
     def _make_observation(self) -> EpiObservation:
+        """Build observation for the current patient in round-robin order."""
         assert self.state is not None
         step = self.state.step_number
         pid = _INITIAL_PATIENTS[(step - 1) % len(_INITIAL_PATIENTS)]["patient_id"]
-        patient = self.state.patients[pid]
+        patient = self._get_patient(pid)
 
-        crk_count = sum(
-            1 for p in self.state.patients.values() if p.resistance_frequency > 0.5
+        crk_count = sum(1 for p in self.state.patients if p["resistance_frequency"] > 0.5)
+        budget_remaining = self.state.colistin_budget - min(
+            self.state.colistin_used, self.state.colistin_budget
         )
-        budget_remaining = self.state.colistin_budget - self.state.colistin_used
+        at_risk_list = sorted(_AT_RISK_HOSPITALS)
 
         return EpiObservation(
             patient_id=pid,
-            ward_id=patient.ward_id,
+            ward_id=patient["ward_id"],
             infection_site="bloodstream",
             symptoms=["fever", "hypotension", "tachycardia"],
-            vitals={"temp_c": 39.1, "hr_bpm": 115, "wbc_k_ul": 19.0, "crp_mg_l": 140.0, "procalcitonin_ng_ml": 5.5},
-            culture_results={"status": "positive", "organism": "K_pneumoniae_CRK"} if patient.resistance_frequency > 0.5 else {"status": "pending"},
-            resistance_flags=["CRK"] if patient.resistance_frequency > 0.5 else [],
-            transfer_history=list(patient.transfer_history),
-            antibiotic_history=list(patient.antibiotic_history),
+            vitals={
+                "temp_c": 39.1, "hr_bpm": 115, "wbc_k_ul": 19.0,
+                "crp_mg_l": 140.0, "procalcitonin_ng_ml": 5.5,
+            },
+            culture_results=(
+                {"status": "positive", "organism": "K_pneumoniae_CRK"}
+                if patient["resistance_frequency"] > 0.5
+                else {"status": "pending"}
+            ),
+            resistance_flags=["CRK"] if patient["resistance_frequency"] > 0.5 else [],
+            transfer_history=list(patient["transfer_history"]),
+            antibiotic_history=list(patient["antibiotic_history"]),
             network_alert=(
-                f"CRK outbreak: {crk_count} cases across network. "
-                f"Colistin budget: {budget_remaining}/{self.state.colistin_budget}"
+                f"CRK outbreak: {crk_count} confirmed ({_INITIAL_CRK_COUNT} initial). "
+                f"At-risk: {', '.join(at_risk_list)}. "
+                f"Colistin budget remaining: {budget_remaining}/{self.state.colistin_budget}. "
+                f"Resistance events: {self._resistance_events}"
             ),
             step_number=step,
         )
 
+    def _get_patient(self, pid: str) -> Dict[str, Any]:
+        for p in self.state.patients:  # type: ignore[union-attr]
+            if p["patient_id"] == pid:
+                return p
+        raise KeyError(pid)
+
     @property
     def ground_truth(self) -> Dict[str, Any]:
         assert self.state is not None
-        crk_patients = [
-            pid for pid, p in self.state.patients.items()
-            if p.resistance_frequency > 0.5
-        ]
+        total_crk = sum(1 for p in self.state.patients if p["resistance_frequency"] > 0.5)
         colistin_overspend = max(0, self.state.colistin_used - self.state.colistin_budget)
         return {
-            "source_hospital": _SOURCE_HOSPITAL,
-            "total_crk_patients": len(crk_patients),
-            "lives_at_risk": self._total_at_risk,
-            "lives_saved": self._lives_saved,
+            "source_hospitals": sorted(_INFECTED_HOSPITALS),
+            "initial_crk_count": _INITIAL_CRK_COUNT,
+            "total_crk_patients": total_crk,
+            "colistin_budget": self.state.colistin_budget,
+            "colistin_used": self.state.colistin_used,
             "colistin_overspend": colistin_overspend,
+            "lives_saved": self._lives_saved,
+            "lives_saved_ratio": float(self._lives_saved) / max(1, total_crk),
             "resistance_amplification_events": self._resistance_events,
-            "containment_orders": list(self._containment_orders),
-            "lives_saved_ratio": self._lives_saved / max(1, self._total_at_risk),
+            "containment_orders": sorted(self._containment_orders),
         }

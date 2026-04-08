@@ -1,78 +1,62 @@
 """
 Task 1 — PrescriptionTriage (Easy).
 
-Single patient, single ward, complete culture data.
-Episode length: 5 steps.
+Single patient (UTI with E_coli_ESBL), complete culture data.
+Episode length: 5 steps. Agent can revise prescription each step.
 
-The agent prescribes an antibiotic for one patient whose culture sensitivities
-arrive incrementally.  Reward improves if the agent de-escalates correctly
-once sensitivities return.
+Culture reveals are incremental:
+  Step 1 → pending
+  Step 2 → gram-negative identified
+  Step 3 → E. coli ESBL confirmed
+  Step 4+ → full sensitivities (nitrofurantoin S, trimethoprim S, ampicillin R, ceftriaxone R)
 
 Ground truth:
-  - correct_drug_class: the drug class that covers the pathogen
-  - optimal_dose_mg:    dose in the therapeutic window
-  - needs_broad:        bool — whether broad-spectrum is actually required
-  - index_pathogen:     the pathogen name
+  correct_drug_class  : "nitrofurantoin"  (ideal narrow-spectrum for uncomplicated UTI)
+  alt_drug_class      : "sulfonamide"     (trimethoprim-sulfamethoxazole also appropriate)
+  optimal_dose_mg     : 100.0             (nitrofurantoin standard UTI dose)
+  needs_broad         : False
+  index_pathogen      : "E_coli_ESBL"
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 from episteward.models import EpiAction, EpiObservation
-from episteward.state import HospitalState, PatientRecord
+from episteward.state import HospitalState
 from episteward.tasks.base import BaseTask
 
 logger = logging.getLogger(__name__)
 
-# Scenario pool — sampled by seed
-_SCENARIOS = [
-    {
-        "patient_id": "P001",
-        "ward_id": "general_ward",
-        "pathogen": "E_coli",
-        "infection_site": "urinary_tract",
-        "symptoms": ["dysuria", "fever_38_5", "flank_pain"],
-        "vitals": {"temp_c": 38.5, "hr_bpm": 96, "wbc_k_ul": 14.2, "crp_mg_l": 48.0, "procalcitonin_ng_ml": 0.6},
-        "correct_drug_class": "fluoroquinolone",
-        "alt_drug_class": "nitrofurantoin",
-        "needs_broad": False,
-        "optimal_dose_mg": 500.0,
-    },
-    {
-        "patient_id": "P002",
-        "ward_id": "icu",
-        "pathogen": "Klebsiella_pneumoniae",
-        "infection_site": "bloodstream",
-        "symptoms": ["fever_39_2", "hypotension", "tachycardia"],
-        "vitals": {"temp_c": 39.2, "hr_bpm": 118, "wbc_k_ul": 18.7, "crp_mg_l": 120.0, "procalcitonin_ng_ml": 4.2},
-        "correct_drug_class": "carbapenem",
-        "alt_drug_class": "beta_lactam_beta_lactamase_inhibitor",
-        "needs_broad": True,
-        "optimal_dose_mg": 1000.0,
-    },
-    {
-        "patient_id": "P003",
-        "ward_id": "surgical_ward",
-        "pathogen": "S_aureus",
-        "infection_site": "wound",
-        "symptoms": ["erythema", "purulent_discharge", "fever_38_1"],
-        "vitals": {"temp_c": 38.1, "hr_bpm": 88, "wbc_k_ul": 12.0, "crp_mg_l": 32.0, "procalcitonin_ng_ml": 0.3},
-        "correct_drug_class": "anti_staphylococcal_penicillin",
-        "alt_drug_class": "first_gen_cephalosporin",
-        "needs_broad": False,
-        "optimal_dose_mg": 500.0,
-    },
-]
+# ---------------------------------------------------------------------------
+# Scenario definition — fixed E_coli_ESBL UTI
+# ---------------------------------------------------------------------------
 
-# Culture reveal schedule: step → what sensitivity info becomes available
-_CULTURE_STEPS = {
-    1: {"status": "pending", "organism": None},
-    2: {"status": "gram_stain", "organism": None},
-    3: {"status": "organism_id", "sensitivities": {}},
-    4: {"status": "full_sensitivities"},
-    5: {"status": "full_sensitivities"},
+_ESBL_UTI_SCENARIO: Dict[str, Any] = {
+    "patient_id": "P001",
+    "ward_id": "MedWard_A",
+    "pathogen": "E_coli_ESBL",
+    "infection_site": "urinary_tract",
+    "symptoms": ["dysuria", "frequency", "fever"],
+    "vitals": {
+        "temp_c": 38.4, "hr_bpm": 94, "wbc_k_ul": 13.8,
+        "crp_mg_l": 52.0, "procalcitonin_ng_ml": 0.7,
+    },
+    "correct_drug_class": "nitrofurantoin",
+    "alt_drug_class": "sulfonamide",
+    "optimal_dose_mg": 100.0,
+    "needs_broad": False,
+    # Full sensitivities available at step 4+
+    "sensitivities": {
+        "nitrofurantoin": "susceptible",
+        "trimethoprim-sulfamethoxazole": "susceptible",
+        "ciprofloxacin": "intermediate",
+        "ampicillin": "resistant",
+        "ceftriaxone": "resistant",
+        "meropenem": "susceptible",   # carbapenem-susceptible — but overkill
+        "piperacillin-tazobactam": "susceptible",
+    },
 }
 
 
@@ -85,24 +69,36 @@ class PrescriptionTriage(BaseTask):
     def __init__(self) -> None:
         super().__init__()
         self._scenario: Dict[str, Any] = {}
-        self._culture_history: List[Dict[str, Any]] = []
 
     def reset(self, seed: int = 0) -> EpiObservation:
-        """Initialise episode, return first observation with pending culture."""
-        self.state = HospitalState(task_id=self.name, episode_seed=seed)
-        self.state.seed(seed)
+        """Initialise episode with E_coli_ESBL UTI patient."""
+        self.state = HospitalState(active_task=self.name, episode_seed=seed)
 
-        # Pick scenario deterministically from seed
-        idx = seed % len(_SCENARIOS)
-        self._scenario = dict(_SCENARIOS[idx])
-        self._culture_history = []
+        # Always the same scenario (UTI with ESBL E. coli)
+        self._scenario = dict(_ESBL_UTI_SCENARIO)
+        pid = self._scenario["patient_id"]
+        ward = self._scenario["ward_id"]
 
-        patient = PatientRecord(
-            patient_id=self._scenario["patient_id"],
-            ward_id=self._scenario["ward_id"],
-            pathogen=self._scenario["pathogen"],
-        )
-        self.state.patients[patient.patient_id] = patient
+        patient_dict: Dict[str, Any] = {
+            "patient_id": pid,
+            "ward_id": ward,
+            "pathogen": self._scenario["pathogen"],
+            "resistance_frequency": 0.05,
+            "is_isolated": False,
+            "is_treated": False,
+            "culture_pending": False,
+            "culture_result": None,
+            "infection_site": self._scenario["infection_site"],
+            "symptoms": list(self._scenario["symptoms"]),
+            "vitals": dict(self._scenario["vitals"]),
+            "treatment_hours_elapsed": 0.0,
+            "transfer_history": ["EmergencyDept", ward],
+            "antibiotic_history": [],
+            "alive": True,
+        }
+        self.state.patients = [patient_dict]
+        self.state.ward_assignments = {pid: ward}
+        self.state.isolation_map = {ward: False}
         self.state.step_number = 1
 
         return self._make_observation()
@@ -112,16 +108,16 @@ class PrescriptionTriage(BaseTask):
         self._assert_ready()
         assert self.state is not None
 
-        pid = self._scenario["patient_id"]
-        patient = self.state.patients[pid]
+        p = self.state.patients[0]
 
         # Record treatment
-        patient.antibiotic_history.append(action.model_dump())
-        patient.is_treated = True
+        p["antibiotic_history"].append(action.model_dump())
+        p["is_treated"] = True
         if action.isolation_order:
-            patient.is_isolated = True
+            p["is_isolated"] = True
+            self.state.isolation_map[p["ward_id"]] = True
         if action.culture_requested:
-            patient.culture_pending = True
+            p["culture_pending"] = True
 
         self.state.step_number += 1
         done = self.state.step_number > self.max_steps
@@ -131,50 +127,51 @@ class PrescriptionTriage(BaseTask):
         return self._make_observation(), done
 
     def _make_observation(self) -> EpiObservation:
-        """Build observation with appropriate culture reveal for current step."""
+        """Build observation with culture data appropriate to the current step."""
         assert self.state is not None
         step = self.state.step_number
-        pid = self._scenario["patient_id"]
-        patient = self.state.patients[pid]
-
-        culture = self._culture_at_step(step)
+        p = self.state.patients[0]
+        pid = p["patient_id"]
 
         return EpiObservation(
             patient_id=pid,
-            ward_id=self._scenario["ward_id"],
+            ward_id=p["ward_id"],
             infection_site=self._scenario["infection_site"],
             symptoms=list(self._scenario["symptoms"]),
             vitals=dict(self._scenario["vitals"]),
-            culture_results=culture,
-            resistance_flags=[],
-            transfer_history=list(patient.transfer_history),
-            antibiotic_history=list(patient.antibiotic_history),
+            culture_results=self._culture_at_step(step),
+            resistance_flags=["ESBL"],
+            transfer_history=list(p["transfer_history"]),
+            antibiotic_history=list(p["antibiotic_history"]),
             network_alert=None,
             step_number=step,
         )
 
     def _culture_at_step(self, step: int) -> Dict[str, Any]:
         """Return culture information appropriate for the current step."""
-        pathogen = self._scenario["pathogen"]
         if step == 1:
             return {"status": "pending"}
-        elif step == 2:
-            return {"status": "gram_stain_available", "gram_stain": "negative"}
-        elif step == 3:
-            return {"status": "organism_identified", "organism": pathogen, "sensitivities": {}}
-        else:
+        if step == 2:
             return {
-                "status": "full_sensitivities",
-                "organism": pathogen,
-                "sensitivities": {
-                    "correct_class": "susceptible",
-                    "broad_class": "susceptible",
-                },
+                "status": "gram_stain_available",
+                "gram_stain": "negative",
             }
+        if step == 3:
+            return {
+                "status": "organism_identified",
+                "organism": "E_coli_ESBL",
+                "sensitivities": {},
+            }
+        # Steps 4–5: full sensitivities available
+        return {
+            "status": "full_sensitivities",
+            "organism": "E_coli_ESBL",
+            "sensitivities": dict(self._scenario["sensitivities"]),
+        }
 
     @property
     def ground_truth(self) -> Dict[str, Any]:
-        """Ground truth for triage grader."""
+        """Ground truth for triage grader — never exposed to agent."""
         return {
             "correct_drug_class": self._scenario["correct_drug_class"],
             "alt_drug_class": self._scenario["alt_drug_class"],

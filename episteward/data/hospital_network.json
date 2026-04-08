@@ -1,35 +1,129 @@
 {
-  "_comment": "10-hospital contact network. Edge weights = patient transfer probability per 24h.",
+  "_comment": "Single-hospital ward contact network. Edge weights = patient transfer probability per 24h. Node attributes: ward_capacity (beds), isolation_beds, average_los_days.",
+
+  "beta_values": {
+    "CRK":  0.08,
+    "ESBL": 0.15,
+    "MRSA": 0.12,
+    "VRE":  0.10,
+    "MDR":  0.09,
+    "default": 0.10
+  },
+
   "nodes": [
-    "H1", "H2", "H3", "H4", "H5",
-    "H6", "H7", "H8", "H9", "H10",
-    "icu", "general_ward", "ward_B", "surgical_ward"
+    {
+      "id": "ICU",
+      "ward_capacity": 20,
+      "isolation_beds": 6,
+      "average_los_days": 7,
+      "_note": "Medical/surgical ICU — highest acuity, most AMR exposure"
+    },
+    {
+      "id": "MedWard_A",
+      "ward_capacity": 40,
+      "isolation_beds": 4,
+      "average_los_days": 5,
+      "_note": "General medical ward — high patient throughput"
+    },
+    {
+      "id": "MedWard_B",
+      "ward_capacity": 35,
+      "isolation_beds": 3,
+      "average_los_days": 4,
+      "_note": "General medical ward — renal/cardiac overflow"
+    },
+    {
+      "id": "SurgWard",
+      "ward_capacity": 30,
+      "isolation_beds": 4,
+      "average_los_days": 4,
+      "_note": "Surgical ward — post-op recovery, wound infection risk"
+    },
+    {
+      "id": "EmergencyDept",
+      "ward_capacity": 25,
+      "isolation_beds": 2,
+      "average_los_days": 1,
+      "_note": "ED — high turnover, community pathogen entry point"
+    },
+    {
+      "id": "NeonatalICU",
+      "ward_capacity": 16,
+      "isolation_beds": 4,
+      "average_los_days": 10,
+      "_note": "NICU — immunocompromised neonates, high AMR vulnerability"
+    },
+    {
+      "id": "OncologyWard",
+      "ward_capacity": 28,
+      "isolation_beds": 6,
+      "average_los_days": 14,
+      "_note": "Oncology — neutropenic patients, prolonged stays, high isolation need"
+    },
+    {
+      "id": "RenalUnit",
+      "ward_capacity": 24,
+      "isolation_beds": 4,
+      "average_los_days": 6,
+      "_note": "Nephrology/dialysis — repeated admissions, CRK/ESBL reservoir risk"
+    },
+    {
+      "id": "CardiacWard",
+      "ward_capacity": 26,
+      "isolation_beds": 4,
+      "average_los_days": 6,
+      "_note": "Cardiology — post-cath, CHF; regular ICU overflow"
+    },
+    {
+      "id": "StepDownUnit",
+      "ward_capacity": 32,
+      "isolation_beds": 4,
+      "average_los_days": 3,
+      "_note": "Step-down / intermediate care — bridge between ICU and general ward"
+    }
   ],
+
   "edges": [
-    {"from": "H1", "to": "H2", "weight": 0.08},
-    {"from": "H1", "to": "H3", "weight": 0.06},
-    {"from": "H2", "to": "H3", "weight": 0.10},
-    {"from": "H2", "to": "H4", "weight": 0.05},
-    {"from": "H3", "to": "H4", "weight": 0.12},
-    {"from": "H3", "to": "H5", "weight": 0.07},
-    {"from": "H3", "to": "H6", "weight": 0.09},
-    {"from": "H4", "to": "H5", "weight": 0.06},
-    {"from": "H4", "to": "H7", "weight": 0.04},
-    {"from": "H5", "to": "H6", "weight": 0.08},
-    {"from": "H5", "to": "H8", "weight": 0.05},
-    {"from": "H6", "to": "H7", "weight": 0.07},
-    {"from": "H6", "to": "H9", "weight": 0.06},
-    {"from": "H7", "to": "H8", "weight": 0.09},
-    {"from": "H7", "to": "H10", "weight": 0.04},
-    {"from": "H8", "to": "H9", "weight": 0.08},
-    {"from": "H8", "to": "H10", "weight": 0.05},
-    {"from": "H9", "to": "H10", "weight": 0.10},
-    {"from": "H10", "to": "H1", "weight": 0.03},
-    {"from": "icu", "to": "general_ward", "weight": 0.15},
-    {"from": "icu", "to": "ward_B", "weight": 0.12},
-    {"from": "general_ward", "to": "ward_B", "weight": 0.10},
-    {"from": "general_ward", "to": "surgical_ward", "weight": 0.08},
-    {"from": "ward_B", "to": "surgical_ward", "weight": 0.07},
-    {"from": "surgical_ward", "to": "icu", "weight": 0.06}
+    {"from": "EmergencyDept", "to": "ICU",          "weight": 0.20, "_note": "Critically ill ED patients escalated to ICU"},
+    {"from": "EmergencyDept", "to": "MedWard_A",    "weight": 0.18, "_note": "Largest ED admission destination"},
+    {"from": "EmergencyDept", "to": "MedWard_B",    "weight": 0.14, "_note": "Overflow from MedWard_A"},
+    {"from": "EmergencyDept", "to": "SurgWard",     "weight": 0.12, "_note": "Acute surgical presentations"},
+    {"from": "EmergencyDept", "to": "CardiacWard",  "weight": 0.08, "_note": "Acute coronary syndromes"},
+    {"from": "EmergencyDept", "to": "NeonatalICU",  "weight": 0.02, "_note": "Neonatal emergencies — rare but high stakes"},
+
+    {"from": "ICU",           "to": "StepDownUnit", "weight": 0.28, "_note": "Primary ICU discharge pathway — step-down"},
+    {"from": "ICU",           "to": "MedWard_A",    "weight": 0.10, "_note": "Stable ICU patients to general medical"},
+    {"from": "ICU",           "to": "MedWard_B",    "weight": 0.08, "_note": "Cardiac/renal ICU patients"},
+    {"from": "ICU",           "to": "CardiacWard",  "weight": 0.07, "_note": "Post-cardiac arrest patients"},
+
+    {"from": "StepDownUnit",  "to": "MedWard_A",    "weight": 0.18, "_note": "Main step-down discharge to general ward"},
+    {"from": "StepDownUnit",  "to": "MedWard_B",    "weight": 0.14, "_note": "Cardiac/renal step-down patients"},
+    {"from": "StepDownUnit",  "to": "ICU",           "weight": 0.06, "_note": "Deterioration requiring ICU readmission"},
+
+    {"from": "SurgWard",      "to": "StepDownUnit", "weight": 0.22, "_note": "Post-op patients to step-down"},
+    {"from": "SurgWard",      "to": "ICU",           "weight": 0.12, "_note": "Post-op complications requiring ICU"},
+    {"from": "SurgWard",      "to": "MedWard_A",    "weight": 0.07, "_note": "Post-discharge medical needs"},
+
+    {"from": "MedWard_A",     "to": "ICU",           "weight": 0.05, "_note": "Deteriorating medical patients"},
+    {"from": "MedWard_A",     "to": "SurgWard",      "weight": 0.08, "_note": "Medical patients requiring surgery"},
+    {"from": "MedWard_A",     "to": "OncologyWard",  "weight": 0.04, "_note": "New oncology diagnoses"},
+    {"from": "MedWard_A",     "to": "RenalUnit",     "weight": 0.06, "_note": "AKI patients to nephrology"},
+
+    {"from": "MedWard_B",     "to": "ICU",           "weight": 0.05, "_note": "Deteriorating medical patients"},
+    {"from": "MedWard_B",     "to": "RenalUnit",     "weight": 0.09, "_note": "Chronic kidney disease management"},
+    {"from": "MedWard_B",     "to": "CardiacWard",   "weight": 0.07, "_note": "Cardiac patients identified in general ward"},
+
+    {"from": "CardiacWard",   "to": "ICU",           "weight": 0.10, "_note": "Cardiac arrest / acute decompensation"},
+    {"from": "CardiacWard",   "to": "StepDownUnit",  "weight": 0.18, "_note": "Stable cardiac patients step down"},
+    {"from": "CardiacWard",   "to": "MedWard_B",     "weight": 0.08, "_note": "Discharge to general medical"},
+
+    {"from": "RenalUnit",     "to": "ICU",           "weight": 0.07, "_note": "Severe AKI / sepsis in renal patients"},
+    {"from": "RenalUnit",     "to": "MedWard_B",     "weight": 0.10, "_note": "Stable dialysis patients to general ward"},
+
+    {"from": "OncologyWard",  "to": "ICU",           "weight": 0.08, "_note": "Neutropenic sepsis escalation"},
+    {"from": "OncologyWard",  "to": "MedWard_A",     "weight": 0.05, "_note": "Post-chemo supportive care"},
+
+    {"from": "NeonatalICU",   "to": "ICU",           "weight": 0.04, "_note": "Severe neonatal cases to PICU/ICU"},
+    {"from": "NeonatalICU",   "to": "EmergencyDept", "weight": 0.02, "_note": "Neonatal emergency re-attendance — rare"}
   ]
 }

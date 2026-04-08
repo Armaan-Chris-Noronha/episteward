@@ -2,12 +2,12 @@
 TriageGrader — scores Task 1 (PrescriptionTriage).
 
 Score breakdown (sums to 1.0 max):
-  drug_class_score    : 0.0–0.4  correct drug class for pathogen
-  pkpd_score          : 0.0–0.3  dose within PK/PD therapeutic window
-  stewardship_score   : 0.0–0.3  narrow-spectrum preference when broad unnecessary
+  drug_class_score  : 0.0–0.4  correct drug class for pathogen
+  pkpd_score        : 0.0–0.3  dose within PK/PD therapeutic window
+  spectrum_score    : 0.0–0.3  narrow-spectrum preference when broad unnecessary
 
-Partial credit is provided at every step.
-De-escalation bonus: reward increases if agent de-escalates after sensitivities return.
+Optimal action (nitrofurantoin 100 mg q6h PO 5d) → total ≥ 0.85
+Worst action (meropenem, broad-spectrum overkill for uncomplicated UTI) → total ≤ 0.25
 """
 
 from __future__ import annotations
@@ -20,10 +20,11 @@ from episteward.state import HospitalState
 
 logger = logging.getLogger(__name__)
 
-# Drug class → spectrum mapping (broad=1, narrow=0)
+# Drug class → spectrum bucket
 _DRUG_SPECTRUM: Dict[str, str] = {
     "carbapenem": "broad",
     "beta_lactam_beta_lactamase_inhibitor": "broad",
+    "third_gen_cephalosporin": "broad",
     "fluoroquinolone": "narrow",
     "nitrofurantoin": "narrow",
     "first_gen_cephalosporin": "narrow",
@@ -32,9 +33,11 @@ _DRUG_SPECTRUM: Dict[str, str] = {
     "oxazolidinone": "narrow",
     "macrolide": "narrow",
     "sulfonamide": "narrow",
+    "polymyxin": "narrow",
+    "penicillin": "narrow",
 }
 
-# Antibiotic name → drug class (partial lookup)
+# Antibiotic name → drug class
 _DRUG_CLASS_MAP: Dict[str, str] = {
     "meropenem": "carbapenem",
     "ertapenem": "carbapenem",
@@ -75,52 +78,57 @@ class TriageGrader:
         needs_broad = ground_truth["needs_broad"]
 
         # --- Drug class score (0.0–0.4) ---
-        if drug_class == correct_class or drug_class == alt_class:
+        if drug_class in (correct_class, alt_class):
             drug_class_score = 0.4
         elif drug_class != "unknown":
-            # Partial credit if at least covering gram direction
-            drug_class_score = 0.15
+            drug_class_score = 0.1  # known drug, wrong class
         else:
             drug_class_score = 0.0
 
-        # --- PK/PD therapeutic window score (0.0–0.3) ---
-        pkpd_score = self._pkpd_score(action, ground_truth)
-
-        # --- Stewardship / narrow-spectrum score (0.0–0.3) ---
-        spectrum = _DRUG_SPECTRUM.get(drug_class, "broad")
-        if not needs_broad and spectrum == "broad":
-            stewardship_score = 0.0  # unnecessary broad-spectrum
-        elif needs_broad and spectrum == "broad":
-            stewardship_score = 0.3  # correct choice
-        elif not needs_broad and spectrum == "narrow":
-            stewardship_score = 0.3  # ideal narrow choice
+        # --- PK/PD score (0.0–0.3) ---
+        # Only meaningful when the drug class is correct; the optimal_dose_mg in
+        # ground_truth is the correct drug's dose, not a universal reference.
+        if drug_class in (correct_class, alt_class):
+            pkpd_score = self._pkpd_score(action, ground_truth)
         else:
-            stewardship_score = 0.1  # narrow when broad needed — suboptimal
+            pkpd_score = 0.0
 
-        # De-escalation bonus: step 4+ with full sensitivities and now narrow
+        # --- Spectrum / stewardship score (0.0–0.3) ---
+        # Only the correct drug class earns spectrum credit; an unrelated "narrow"
+        # drug (e.g. azithromycin for a UTI) must not free-ride on the narrow label.
+        spectrum = _DRUG_SPECTRUM.get(drug_class, "broad")
+        if drug_class not in (correct_class, alt_class):
+            # Wrong drug class entirely — no spectrum credit
+            spectrum_score = 0.0
+        elif not needs_broad and spectrum == "narrow":
+            spectrum_score = 0.3   # ideal: narrow when narrow is appropriate
+        elif needs_broad and spectrum == "broad":
+            spectrum_score = 0.3   # correct broad choice
+        elif not needs_broad and spectrum == "broad":
+            spectrum_score = 0.0   # overkill: broad when narrow suffices
+        else:
+            spectrum_score = 0.1   # narrow when broad needed — suboptimal
+
+        # De-escalation bonus at step 4+ when culture data is available
         de_escalation_bonus = 0.0
         if step_number >= 4 and spectrum == "narrow" and not needs_broad:
-            # Check if previous steps had broad
-            history = []
-            for pid, patient in state.patients.items():
-                history = patient.antibiotic_history
+            history = _get_antibiotic_history(state)
             if len(history) > 1:
                 prev_drug = history[-2].get("antibiotic", "")
                 prev_class = _DRUG_CLASS_MAP.get(prev_drug.lower(), "unknown")
-                prev_spectrum = _DRUG_SPECTRUM.get(prev_class, "narrow")
-                if prev_spectrum == "broad":
-                    de_escalation_bonus = 0.1  # correct de-escalation
+                if _DRUG_SPECTRUM.get(prev_class, "narrow") == "broad":
+                    de_escalation_bonus = 0.1
 
-        base_score = drug_class_score + pkpd_score + stewardship_score + de_escalation_bonus
+        base_score = drug_class_score + pkpd_score + spectrum_score + de_escalation_bonus
         reward = float(min(1.0, max(0.0, base_score)))
-
         done = step_number >= 5
+
         return {
             "reward": reward,
             "components": {
                 "drug_class": drug_class_score,
                 "pkpd": pkpd_score,
-                "stewardship": stewardship_score,
+                "spectrum": spectrum_score,
                 "de_escalation_bonus": de_escalation_bonus,
             },
             "done": done,
@@ -133,17 +141,25 @@ class TriageGrader:
         }
 
     def _pkpd_score(
-        self, action: EpiAction, ground_truth: Dict[str, Any]
+        self,
+        action: EpiAction,
+        ground_truth: Dict[str, Any],
     ) -> float:
-        """Score dose appropriateness vs ground-truth optimal dose."""
-        optimal = ground_truth.get("optimal_dose_mg", 500.0)
+        """Score dose appropriateness relative to ground-truth optimal dose."""
+        optimal = float(ground_truth.get("optimal_dose_mg", 500.0))
         ratio = action.dose_mg / max(optimal, 1.0)
-        # Score peaks at 1.0 ratio, degrades ±50%
         deviation = abs(ratio - 1.0)
         if deviation <= 0.1:
             return 0.3
-        elif deviation <= 0.3:
+        if deviation <= 0.5:
             return 0.2
-        elif deviation <= 0.5:
+        if deviation <= 2.0:
             return 0.1
         return 0.0
+
+
+def _get_antibiotic_history(state: HospitalState) -> List[Dict[str, Any]]:
+    """Return antibiotic history from the first patient in state."""
+    if state.patients:
+        return state.patients[0].get("antibiotic_history", [])
+    return []

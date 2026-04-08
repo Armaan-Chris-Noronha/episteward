@@ -116,9 +116,9 @@ async def get_llm_action(
         data = json.loads(content)
         return EpiAction.model_validate(data)
     except Exception:
-        # Fallback to a safe default action
+        # Fallback to safe default on any parse / validation failure
         return EpiAction(
-            antibiotic="meropenem",
+            antibiotic="ceftriaxone",
             dose_mg=1000.0,
             frequency_hours=8.0,
             duration_days=7,
@@ -151,14 +151,14 @@ async def run_episode(env: EpiStewardEnv, client: AsyncOpenAI, task_id: str) -> 
 
         while not done and steps < max_steps:
             steps += 1
-            obs_json = result.observation.model_dump_json()
+            obs_json = json.dumps(result.observation.model_dump(), indent=2)
 
             try:
                 action = await get_llm_action(client, obs_json, conversation)
             except Exception as e:
                 error = str(e)
                 action = EpiAction(
-                    antibiotic="meropenem", dose_mg=1000.0,
+                    antibiotic="ceftriaxone", dose_mg=1000.0,
                     frequency_hours=8.0, duration_days=7, route="IV",
                     isolation_order=False, culture_requested=True,
                     specialist_consult=False,
