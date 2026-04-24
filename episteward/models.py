@@ -59,6 +59,16 @@ class EpiObservation(BaseModel):
     network_alert: Optional[str] = None
     step_number: int
 
+    # --- R2 additions ---
+    pathogen_posterior: Dict[str, float] = Field(default_factory=dict)
+    # e.g. {"E_coli": 0.62, "K_pneumoniae": 0.28, ...} sums to 1.0
+    msw_zone: Optional[str] = None
+    # "sub_mic" | "msw" | "mpc_plus" | None
+    ward_resistance_pressure: float = Field(default=0.0, ge=0.0, le=1.0)
+    # normalised Ward Resistance Pressure Index [0, 1]
+    app_context: Optional[str] = None
+    # "ehr" | "lab" | "pharmacy" | "microbiology" | None
+
 
 class EpiAction(BaseModel):
     """Action submitted by the agent each step."""
@@ -88,6 +98,28 @@ class EpiAction(BaseModel):
     culture_requested: bool = False
     specialist_consult: bool = False
     reasoning: Optional[str] = None  # logged but not graded
+
+    # --- R2 additions ---
+    diagnostic_test: Optional[str] = Field(default=None)
+    # None | "rapid_pcr" | "standard_culture" | "sensitivity_panel"
+    target_app: Optional[str] = Field(default=None)
+    # None | "ehr" | "lab" | "pharmacy" | "microbiology"
+
+    @field_validator("diagnostic_test")
+    @classmethod
+    def validate_diagnostic_test(cls, v: Optional[str]) -> Optional[str]:
+        valid = {None, "rapid_pcr", "standard_culture", "sensitivity_panel"}
+        if v not in valid:
+            raise ValueError(f"diagnostic_test must be one of {valid}, got '{v}'")
+        return v
+
+    @field_validator("target_app")
+    @classmethod
+    def validate_target_app(cls, v: Optional[str]) -> Optional[str]:
+        valid = {None, "ehr", "lab", "pharmacy", "microbiology"}
+        if v not in valid:
+            raise ValueError(f"target_app must be one of {valid}, got '{v}'")
+        return v
 
     @field_validator("frequency_hours")
     @classmethod

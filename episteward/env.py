@@ -37,8 +37,12 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from episteward.graders import ContainmentGrader, OutbreakGrader, TriageGrader
+from episteward.apps import AppRouter
+from episteward.curriculum import CurriculumGenerator
+from episteward.experts import IDSpecialist
+from episteward.graders import ContainmentGrader, MultiAgentGrader, OutbreakGrader, TriageGrader
 from episteward.models import EpiAction, ResetRequest, StateResult, StepResult
+from episteward.oversight import OversightAgent
 from episteward.tasks import TASK_REGISTRY, BaseTask
 
 logger = logging.getLogger(__name__)
@@ -51,6 +55,7 @@ _GRADERS: Dict[str, Any] = {
     "task1_triage": TriageGrader(),
     "task2_containment": ContainmentGrader(),
     "task3_outbreak": OutbreakGrader(),
+    "task4_multiagent": MultiAgentGrader(),
 }
 
 
@@ -70,6 +75,17 @@ class _InProcessBackend:
         self._task: Optional[BaseTask] = None
         self._task_id: str = "task1_triage"
         self._prev_new_cases: int = 0  # task2 grader needs cumulative-delta tracking
+        self._oversight: OversightAgent = OversightAgent()
+        self._curriculum: CurriculumGenerator = CurriculumGenerator()
+        self._specialist: IDSpecialist = IDSpecialist()
+        self._router: AppRouter = AppRouter()
+        self._episode_recent_failures: int = 0  # oversight flag count for specialist
+        # Per-episode accumulators reset in reset()
+        self._episode_actions: list = []
+        self._episode_rewards: list = []
+        self._episode_oversight_flags: list = []
+        self._episode_msw_steps: int = 0
+        self._episode_initial_wrpi: float = 0.0
 
     async def reset(self, task_id: str = "task1_triage", seed: int = 0) -> StepResult:
         if task_id not in TASK_REGISTRY:
@@ -77,9 +93,24 @@ class _InProcessBackend:
 
         self._task_id = task_id
         self._prev_new_cases = 0
+        self._oversight = OversightAgent()  # fresh oversight history per episode
+        self._specialist = IDSpecialist()   # fresh specialist stance per episode
+        self._router.reset()                # reset episode-scoped router state
+
+        # Reset per-episode curriculum accumulators
+        self._episode_actions = []
+        self._episode_rewards = []
+        self._episode_oversight_flags = []
+        self._episode_msw_steps = 0
+        self._episode_initial_wrpi = 0.0
+        self._episode_recent_failures = 0
 
         self._task = TASK_REGISTRY[task_id]()
         observation = self._task.reset(seed=seed)
+
+        # Capture starting resistance pressure for hgt_cascade detection
+        self._episode_initial_wrpi = float(observation.ward_resistance_pressure)
+
         return StepResult(observation=observation, reward=0.0, done=False, info={})
 
     async def step(self, action: EpiAction) -> StepResult:
@@ -88,12 +119,89 @@ class _InProcessBackend:
 
         observation, done = self._task.step(action)
         grade = self._grade(action)
-        return StepResult(
-            observation=observation,
-            reward=float(grade["reward"]),
-            done=done,
-            info=grade.get("info", {}),
+
+        # ---- Oversight: monitor, flag, and optionally penalise ----
+        ward_states = (
+            list(self._task.state.patients) if self._task.state else []
         )
+        oversight_report = self._oversight.observe([action], ward_states)
+
+        reward = float(grade["reward"])
+        if oversight_report.severity == "critical":
+            reward = float(max(0.0, reward - 0.15))
+
+        info = dict(grade.get("info", {}))
+        info["oversight"] = {
+            "flags": oversight_report.flags,
+            "severity": oversight_report.severity,
+            "explanations": oversight_report.explanations,
+            "recommended_action": oversight_report.recommended_action,
+        }
+
+        # ---- Specialist: update stance then evaluate action ----
+        wrpi = float(observation.ward_resistance_pressure)
+        self._episode_recent_failures += len(oversight_report.flags)
+        outbreak_active = observation.network_alert is not None
+        self._specialist.update_stance(wrpi, self._episode_recent_failures, outbreak_active)
+
+        specialist_context = {
+            "resistance_flags": observation.resistance_flags,
+            "culture_result": observation.culture_results.get("organism")
+                if isinstance(observation.culture_results, dict) else None,
+            "infection_site": observation.infection_site,
+            "wrpi": wrpi,
+        }
+        specialist_feedback = self._specialist.evaluate_action(action, specialist_context)
+        reward = float(min(1.0, reward + 0.1 * specialist_feedback.reward_signal))
+        info["specialist_feedback"] = {
+            "approved": specialist_feedback.approved,
+            "comment": specialist_feedback.comment,
+            "stance": specialist_feedback.stance,
+            "suggested_alternative": specialist_feedback.suggested_alternative,
+            "reward_signal": specialist_feedback.reward_signal,
+        }
+
+        # ---- Enterprise apps: route action, apply reward delta ----
+        app_response = self._router.route(action, self._task.state)
+        reward = float(min(1.0, max(0.0, reward + app_response.reward_delta)))
+        info["app_response"] = {
+            "routed": app_response.routed,
+            "processed": app_response.processed,
+            "reward_delta": app_response.reward_delta,
+            "message": app_response.message,
+            "latency_steps": app_response.latency_steps,
+        }
+
+        # ---- Curriculum: accumulate per-step data ----
+        self._episode_actions.append(action)
+        self._episode_rewards.append(reward)
+        self._episode_oversight_flags.extend(oversight_report.flags)
+        if observation.msw_zone == "msw":
+            self._episode_msw_steps += 1
+
+        if done:
+            final_state_for_curriculum = {
+                "oversight_flags": list(set(self._episode_oversight_flags)),
+                "msw_steps": self._episode_msw_steps,
+                "initial_wrpi": self._episode_initial_wrpi,
+                "final_wrpi": float(observation.ward_resistance_pressure),
+            }
+            self._curriculum.record_episode(
+                self._task_id,
+                self._episode_actions,
+                self._episode_rewards,
+                final_state_for_curriculum,
+            )
+            info["curriculum"] = {
+                "difficulty_level": self._curriculum.difficulty_level,
+                "failure_distribution": self._curriculum.get_failure_distribution(),
+                "episode_failures": (
+                    self._curriculum.failure_log[-1].failure_types
+                    if self._curriculum.failure_log else []
+                ),
+            }
+
+        return StepResult(observation=observation, reward=reward, done=done, info=info)
 
     def _grade(self, action: EpiAction) -> Dict[str, Any]:
         assert self._task is not None and self._task.state is not None

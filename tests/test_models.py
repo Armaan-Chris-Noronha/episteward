@@ -265,3 +265,122 @@ class TestResetRequest:
         r = ResetRequest(task_id="task3_outbreak", seed=99)
         assert r.task_id == "task3_outbreak"
         assert r.seed == 99
+
+
+# ---------------------------------------------------------------------------
+# R2 additions — EpiObservation new fields
+# ---------------------------------------------------------------------------
+
+class TestEpiObservationR2:
+    def test_r2_fields_default_to_empty_or_none(self):
+        obs = _obs()
+        assert obs.pathogen_posterior == {}
+        assert obs.msw_zone is None
+        assert obs.ward_resistance_pressure == pytest.approx(0.0)
+        assert obs.app_context is None
+
+    def test_pathogen_posterior_populated(self):
+        posterior = {"E_coli": 0.62, "K_pneumoniae": 0.28, "S_aureus": 0.10}
+        obs = _obs(pathogen_posterior=posterior)
+        assert obs.pathogen_posterior["E_coli"] == pytest.approx(0.62)
+        assert obs.pathogen_posterior["K_pneumoniae"] == pytest.approx(0.28)
+
+    def test_pathogen_posterior_round_trip(self):
+        posterior = {"E_coli": 0.7, "K_pneumoniae": 0.2, "S_aureus": 0.1}
+        obs = _obs(pathogen_posterior=posterior)
+        restored = EpiObservation.model_validate(obs.model_dump())
+        assert restored.pathogen_posterior == obs.pathogen_posterior
+
+    def test_msw_zone_accepts_valid_values(self):
+        for zone in ("sub_mic", "msw", "mpc_plus", None):
+            obs = _obs(msw_zone=zone)
+            assert obs.msw_zone == zone
+
+    def test_ward_resistance_pressure_bounds(self):
+        obs_low  = _obs(ward_resistance_pressure=0.0)
+        obs_high = _obs(ward_resistance_pressure=1.0)
+        assert obs_low.ward_resistance_pressure  == pytest.approx(0.0)
+        assert obs_high.ward_resistance_pressure == pytest.approx(1.0)
+
+    def test_ward_resistance_pressure_out_of_range(self):
+        with pytest.raises(ValidationError):
+            _obs(ward_resistance_pressure=1.5)
+        with pytest.raises(ValidationError):
+            _obs(ward_resistance_pressure=-0.1)
+
+    def test_app_context_accepts_valid_values(self):
+        for ctx in ("ehr", "lab", "pharmacy", "microbiology", None):
+            obs = _obs(app_context=ctx)
+            assert obs.app_context == ctx
+
+    def test_existing_code_without_r2_fields_still_works(self):
+        """Constructing EpiObservation without new fields must not fail."""
+        obs = EpiObservation(
+            patient_id="P999",
+            ward_id="WARD1",
+            infection_site="urinary",
+            symptoms=["dysuria"],
+            vitals={"temp_c": 37.5, "hr_bpm": 80, "wbc_k_ul": 10.0,
+                    "crp_mg_l": 20.0, "procalcitonin_ng_ml": 0.5},
+            culture_results={"status": "pending"},
+            resistance_flags=[],
+            transfer_history=[],
+            antibiotic_history=[],
+            step_number=1,
+        )
+        assert obs.pathogen_posterior == {}
+        assert obs.msw_zone is None
+        assert obs.app_context is None
+
+
+# ---------------------------------------------------------------------------
+# R2 additions — EpiAction new fields and validators
+# ---------------------------------------------------------------------------
+
+class TestEpiActionR2:
+    def test_r2_fields_default_to_none(self):
+        action = _action()
+        assert action.diagnostic_test is None
+        assert action.target_app is None
+
+    # diagnostic_test valid values
+    @pytest.mark.parametrize("dt", ["rapid_pcr", "standard_culture", "sensitivity_panel", None])
+    def test_valid_diagnostic_test(self, dt):
+        action = _action(diagnostic_test=dt)
+        assert action.diagnostic_test == dt
+
+    # diagnostic_test invalid values
+    @pytest.mark.parametrize("bad_dt", ["xray", "mri", "blood_test", "", "RAPID_PCR"])
+    def test_invalid_diagnostic_test_raises(self, bad_dt):
+        with pytest.raises(ValidationError, match="diagnostic_test"):
+            _action(diagnostic_test=bad_dt)
+
+    # target_app valid values
+    @pytest.mark.parametrize("app", ["ehr", "lab", "pharmacy", "microbiology", None])
+    def test_valid_target_app(self, app):
+        action = _action(target_app=app)
+        assert action.target_app == app
+
+    # target_app invalid values
+    @pytest.mark.parametrize("bad_app", ["EHR", "radiology", "billing", "", "LAB"])
+    def test_invalid_target_app_raises(self, bad_app):
+        with pytest.raises(ValidationError, match="target_app"):
+            _action(target_app=bad_app)
+
+    def test_round_trip_with_r2_fields(self):
+        action = _action(diagnostic_test="rapid_pcr", target_app="lab")
+        restored = EpiAction.model_validate(action.model_dump())
+        assert restored.diagnostic_test == "rapid_pcr"
+        assert restored.target_app == "lab"
+
+    def test_existing_code_without_r2_fields_still_works(self):
+        """Constructing EpiAction without new fields must not fail."""
+        action = EpiAction(
+            antibiotic="ceftriaxone",
+            dose_mg=2000.0,
+            frequency_hours=24.0,
+            duration_days=5,
+            route="IV",
+        )
+        assert action.diagnostic_test is None
+        assert action.target_app is None

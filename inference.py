@@ -37,8 +37,8 @@ API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "no-key"
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 
-TASKS = ["task1_triage", "task2_containment", "task3_outbreak"]
-MAX_STEPS = {"task1_triage": 5, "task2_containment": 15, "task3_outbreak": 30}
+TASKS = ["task1_triage", "task2_containment", "task3_outbreak", "task4_multiagent"]
+MAX_STEPS = {"task1_triage": 5, "task2_containment": 15, "task3_outbreak": 30, "task4_multiagent": 20}
 MAX_TOTAL_REWARD = 1.0  # per step; multiply by steps for normalization
 SUCCESS_SCORE_THRESHOLD = 0.5
 
@@ -84,7 +84,14 @@ EpiAction fields:
   reasoning: str        (brief explanation)
 
 Choose the narrowest-spectrum antibiotic that covers the suspected pathogen.
-Reserve carbapenems and colistin for confirmed resistant organisms only."""
+Reserve carbapenems and colistin for confirmed resistant organisms only.
+
+For task4_multiagent: your antibiotic field encodes a stewardship signal to 5 ward agents.
+  narrow (nitrofurantoin, cefazolin, ampicillin, ...) → signal 0.1 (stewardship)
+  moderate (ceftriaxone, piperacillin-tazobactam)    → signal 0.5
+  broad (meropenem, colistin)                        → signal 0.9 (increases AMR risk)
+Use target_app="ehr" to observe without changing ward sigmas.
+Use isolation_order=True or specialist_consult=True to add -0.1 stewardship push."""
 
 
 async def get_llm_action(
