@@ -12,7 +12,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 import numpy as np
-from openenv.core.rubrics import Rubric
+class Rubric:
+    """Base rubric class — openenv-compatible composable reward component."""
+    def score(self, *args, **kwargs) -> float:
+        raise NotImplementedError
 
 from episteward.graders._utils import (
     r2_app_routing_score,
