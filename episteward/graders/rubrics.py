@@ -12,10 +12,24 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 import numpy as np
+
+
 class Rubric:
     """Base rubric class — openenv-compatible composable reward component."""
-    def score(self, *args, **kwargs) -> float:
-        raise NotImplementedError
+
+    def __init__(self) -> None:
+        self.last_score: float = 0.0
+
+    def forward(self, action: Any, ctx: Any) -> float:
+        return 0.0
+
+    def score(self, action: Any, ctx: Any) -> float:
+        result = self.forward(action, ctx)
+        self.last_score = result
+        return result
+
+    def __call__(self, action: Any, ctx: Any) -> float:
+        return self.score(action, ctx)
 
 from episteward.graders._utils import (
     r2_app_routing_score,

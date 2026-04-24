@@ -18,10 +18,6 @@ import logging
 from typing import Any, Dict, List
 
 import numpy as np
-class Rubric:
-    """OpenEnv-compatible composable reward component."""
-    def score(self, *args, **kwargs) -> float:
-        raise NotImplementedError
 
 from episteward.graders._utils import (
     get_pk_and_cseries,
@@ -40,6 +36,7 @@ from episteward.graders.rubrics import (
     HGTPressureRubric,
     OversightFlagsRubric,
     SpecialistAlignmentRubric,
+    Rubric,
 )
 from episteward.math.msw import get_msw_reward_component as _msw_reward
 from episteward.math.pareto_reward import compute_reward_vector, compute_adaptive_weights

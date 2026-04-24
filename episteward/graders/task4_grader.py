@@ -17,12 +17,8 @@ import logging
 from typing import Any, Dict, List
 
 import numpy as np
-class Rubric:
-    """OpenEnv-compatible composable reward component."""
-    def score(self, *args, **kwargs) -> float:
-        raise NotImplementedError
 
-from episteward.graders.rubrics import GradingContext
+from episteward.graders.rubrics import GradingContext, Rubric
 from episteward.math.game_theory import (
     get_game_reward,
     price_of_anarchy,
