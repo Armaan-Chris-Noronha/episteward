@@ -8,18 +8,69 @@ app_port: 7860
 license: mit
 ---
 
-# EpiSteward
+# EpiSteward 🏥
+
+Antibiotic resistance will kill 10 million people a year by 2050.
+The main driver isn't biology — it's decisions. EpiSteward trains an
+RL agent to make better ones.
+
+## Submission Links
+
+| Deliverable | URL |
+|---|---|
+| HuggingFace Space | https://huggingface.co/spaces/armaancn/episteward_openenv |
+| Training Notebook (Colab) | https://colab.research.google.com/drive/1t1JMl2Iqc5T7w5noUS1C-kwoTr-PnHh4?usp=sharing |
+| Code Repository | https://github.com/Armaan-Chris-Noronha/episteward |
+| Blog Post | REPLACE_WITH_HF_BLOG_URL |
+
+## What the agent learns that LLMs currently can't do
+
+Current LLMs retrieve antibiotic guidelines. EpiSteward trains an agent
+to reason causally about delayed consequences — a culture result 48 hours
+later, resistance pressure building across weeks, a ward equilibrium
+shifting over months. No prompt engineering teaches this. Only training does.
+
+## Training Evidence
+
+![Reward Curves](assets/demo_reward_curves.png)
+*Training progress over 500 steps — all four objectives improving simultaneously.*
+
+![Price of Anarchy](assets/demo_poa.png)
+*PoA drops from 2.4 to 1.3 — agent recovers value lost to selfish prescribing.*
+
+## Results
+
+| Agent | Task 1 | Task 2 | Task 3 | Task 4 |
+|---|---|---|---|---|
+| Random baseline | 0.10 | 0.10 | 0.10 | 0.10 |
+| Trained agent | TBD | TBD | TBD | TBD |
+
+*(Updated after onsite GPU training run)*
+
+## Themes Covered
+- **Theme 3.1** — World Modeling (Professional Tasks)
+- **Theme 1** — Multi-Agent Interactions + Fleet AI bonus
+- **Theme 4** — Self-Improvement + Snorkel AI bonus
+- **Scaler AI Labs** bonus — Multi-App Enterprise Workflows
+
+## Math Foundations
+- Two-compartment population PK/PD with Bayesian MAP estimation
+- Itô SDE resistance dynamics (replaces deterministic Wright-Fisher)
+- Mutant Selection Window — no other RL environment models this
+- Horizontal Gene Transfer ODE with SOS-response amplification
+- Bayesian sequential pathogen inference with Value of Information
+- Pareto multi-objective reward with adaptive ecological weights
+- N-ward game theory — Nash equilibrium, Price of Anarchy
+
+---
+
+## Environment Details
 
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-compatible-brightgreen)](https://github.com/openenv)
 [![Python](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED)](https://hub.docker.com/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**AI Antibiotic Stewardship Environment for Reinforcement Learning**
-
-Antimicrobial resistance (AMR) kills ~700,000 people per year today — and is projected to reach **10 million deaths per year by 2050**, surpassing cancer. A key driver is inappropriate antibiotic prescribing inside hospital networks: wrong drug, wrong dose, wrong duration. EpiSteward places an RL agent in that role, forcing it to make evidence-based prescribing decisions under uncertainty, contain resistance transmission chains, and allocate last-resort antibiotics across a multi-hospital network.
-
----
 
 ## Math Models
 
