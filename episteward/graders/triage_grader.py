@@ -22,7 +22,10 @@ import logging
 from typing import Any, Dict, List
 
 import numpy as np
-from openenv.core.rubrics import Rubric
+class Rubric:
+    """OpenEnv-compatible composable reward component."""
+    def score(self, *args, **kwargs) -> float:
+        raise NotImplementedError
 
 from episteward.graders._utils import (
     get_pk_and_cseries,
