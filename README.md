@@ -79,6 +79,30 @@ crisis is across the ward.
 
 *Zero-shot scores from Qwen2.5-72B-Instruct via HF Inference API. GRPO fine-tuned Qwen2.5-3B trained for 200 steps — reward curves above show training progress.*
 
+### Before vs After Training — 3 Patient Vignettes
+
+| Vignette | Metric | Untrained agent | Trained agent |
+|---|---|---|---|
+| **UTI — Elderly (80F, E.coli)** | antibiotic | meropenem | nitrofurantoin |
+| | route | IV | PO |
+| | target_app | — | lab |
+| | diagnostic | — | standard_culture |
+| | **reward** | **0.039** | **1.000** |
+| **Sepsis — ICU, ESBL flags** | antibiotic | meropenem | piperacillin-tazobactam |
+| | route | IV | IV |
+| | target_app | — | pharmacy |
+| | diagnostic | — | sensitivity_panel |
+| | **reward** | **0.070** | **0.809** |
+| **Multi-Ward AMR (PoA≈2.4)** | antibiotic | meropenem | ceftriaxone |
+| | route | IV | IV |
+| | target_app | — | ehr |
+| | diagnostic | — | — |
+| | **reward** | **0.005** | **0.035** |
+
+The untrained agent defaults to meropenem (last-resort carbapenem) for every case regardless of context, orders no diagnostics, and routes to no enterprise app. The trained agent selects the narrowest effective drug, orders diagnostics to reduce uncertainty, and routes actions to the correct system.
+
+---
+
 ### What the scores mean
 
 **Task 2 — 0.874 (well above target of 0.65)**
