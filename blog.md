@@ -43,6 +43,20 @@ There are four tasks of increasing difficulty — from a single UTI patient (5 s
 
 **EpiSteward makes the agent live with delayed consequences.**
 
+### The Four Tasks
+
+**Task 1 — Prescription Triage** `[easy · 5 steps]`
+Single patient, E. coli ESBL urinary tract infection. Culture data is revealed incrementally across steps. The agent selects antibiotic, dose, route, and duration. The grader checks drug class correctness, PK/PD therapeutic window, spectrum appropriateness, and de-escalation timing. Optimal action: `nitrofurantoin 100mg q6h PO 5 days` — the narrowest effective drug for a UTI, oral not IV, short course.
+
+**Task 2 — Resistance Containment** `[medium · 15 steps]`
+Six-patient ESBL cluster in a medical ward. The agent must identify the index patient, order isolation, and prescribe appropriately across all exposed patients. New resistance cases incur a penalty each step; early isolation gives a bonus. This is where the agent learns that prescribing and infection control are inseparable decisions.
+
+**Task 3 — Network Outbreak Response** `[hard · 30 steps]`
+Ten hospitals, two already infected with carbapenem-resistant Klebsiella. The agent has a finite budget of colistin — the last-resort antibiotic. It must trace spread through the network, issue containment orders, and allocate last-resort therapy only where necessary. Every carbapenem use risks amplifying resistance further. This task cannot be solved by prescribing the same thing every step.
+
+**Task 4 — Multi-Ward Stewardship Game** `[expert · 20 steps]`
+The agent plays coordinator across 5 wards simultaneously. Each ward has its own prescribing intensity σᵢ ∈ [0,1] that shifts based on the coordinator's signal. The antibiotic the agent prescribes encodes that signal — narrow drugs push wards toward conservative prescribing, broad drugs push them toward overuse. The agent must learn to steer a hospital-wide equilibrium toward the social optimum, not just treat the patient in front of it.
+
 ---
 
 ## The Science
