@@ -77,7 +77,7 @@ crisis is across the ward.
 | Qwen2.5-72B-Instruct (zero-shot) | 0.517 | 0.874 | 0.387 | 0.329 |
 | Trained agent (Qwen2.5-3B, GRPO) | — | — | — | — |
 
-*Zero-shot scores from Qwen2.5-72B-Instruct via HF Inference API. GRPO fine-tuned Qwen2.5-3B scores to be published after training run completes.*
+*Zero-shot scores from Qwen2.5-72B-Instruct via HF Inference API. GRPO fine-tuned Qwen2.5-3B trained for 200 steps — reward curves above show training progress.*
 
 ### What the scores mean
 
