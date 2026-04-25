@@ -79,6 +79,112 @@ crisis is across the ward.
 
 *Zero-shot scores from Qwen2.5-72B-Instruct via HF Inference API. GRPO fine-tuned Qwen2.5-3B scores to be published after training run completes.*
 
+### What the scores mean
+
+**Task 2 — 0.874 (well above target of 0.65)**
+The model correctly identifies the ESBL cluster, prescribes piperacillin-tazobactam, and adds isolation orders as the episode progresses. The reward climbs from 0.72 → 0.96 across steps as the model consistently reinforces isolation. This is the task where the clinical logic is most unambiguous — the model's existing antibiotic knowledge transfers cleanly.
+
+**Task 1 — 0.229 (below target of 0.85)**
+The model picks piperacillin-tazobactam for an E. coli ESBL urinary tract infection — that's the correct drug *class*, but the environment rewards nitrofurantoin (narrower spectrum, oral, guideline-concordant for UTIs). This score reveals the exact gap RL training closes: a zero-shot LLM optimises for clinical coverage, not for the stewardship/ecology objectives simultaneously. The grader rewards the antibiotic that is narrowest while still effective.
+
+**Task 3 — 0.387 (below target of 0.65)**
+The model prescribes meropenem correctly for CRK Klebsiella — that choice is clinically justified. But the outbreak task penalises resistance amplification over 30 steps: repeatedly using carbapenems across a 10-hospital network without colistin allocation or de-escalation when possible drives the resistance score down. An RL agent would learn when to conserve last-resort therapy.
+
+**Task 4 — 0.329 (below target of 0.60)**
+The most striking result. The reward climbs steadily from 0.30 to 0.94 at step 12 as the model learns to alternate narrow/moderate signals — then collapses to 0.06 and stays there. The model cannot model the game: it doesn't understand that its prescribing signal shifts all 5 ward sigmas, and overshoots into a high-resistance equilibrium it can't recover from. This is the task that is *structurally* unsolvable by prompting alone — it requires learning the multi-ward dynamics through interaction. GRPO training on this task is where the most gain is expected.
+
+**The pattern**: the gap between Task 2 (0.874) and Tasks 1, 3, 4 (0.23–0.39) is exactly what EpiSteward is designed to expose. Clinical knowledge is not the bottleneck — causal reasoning about delayed consequences, resistance dynamics, and multi-agent equilibria is. Those are learned, not retrieved.
+
+---
+
+## Reproducing Results
+
+All tasks run in-process with no external dependencies. No GPU or API key required for environment execution.
+
+### Prerequisites
+
+```bash
+git clone https://github.com/Armaan-Chris-Noronha/episteward
+cd episteward
+pip install -e ".[dev]"
+```
+
+### Run the demo (all 4 tasks, hardcoded actions, ~2 seconds)
+
+```bash
+python demo.py
+```
+
+Expected output: rewards for all 4 tasks, oversight flags, specialist stance per task.
+
+### Run the full test suite
+
+```bash
+python -m pytest tests/ -v
+```
+
+490 tests, passes in under 5 seconds. No network required.
+
+### Run the LLM agent (requires HF token)
+
+```bash
+export HF_TOKEN=hf_YOUR_TOKEN_HERE
+python inference.py
+```
+
+Uses `Qwen/Qwen2.5-72B-Instruct` via HF Inference API by default. This reproduces the scores in the table above. Token needs [Inference API access](https://huggingface.co/settings/tokens).
+
+To use a different model:
+
+```bash
+MODEL_NAME=Qwen/Qwen2.5-7B-Instruct HF_TOKEN=hf_... python inference.py
+```
+
+### Run via Docker
+
+```bash
+docker build -t episteward .
+docker run -p 7860:7860 episteward
+
+# In a second terminal:
+curl http://localhost:7860/health
+curl http://localhost:7860/tasks
+curl -X POST http://localhost:7860/reset \
+     -H "Content-Type: application/json" \
+     -d '{"task_id": "task1_triage"}'
+curl -X POST http://localhost:7860/step \
+     -H "Content-Type: application/json" \
+     -d '{"antibiotic":"nitrofurantoin","dose_mg":100,"frequency_hours":6,"duration_days":5,"route":"PO","culture_requested":true}'
+```
+
+### Run a single task programmatically
+
+```python
+import asyncio
+from episteward import EpiStewardEnv, EpiAction
+
+async def main():
+    env = EpiStewardEnv.in_process()
+    result = await env.reset(task_id="task1_triage")
+    print(result.observation.model_dump())
+
+    action = EpiAction(
+        antibiotic="nitrofurantoin",
+        dose_mg=100,
+        frequency_hours=6,
+        duration_days=5,
+        route="PO",
+        culture_requested=True,
+    )
+    result = await env.step(action)
+    print(f"Reward: {result.reward:.3f}")
+    print(f"Components: {result.info['components']}")
+
+asyncio.run(main())
+```
+
+The optimal action for Task 1 (`nitrofurantoin 100mg q6h PO 5d`) should return reward ≥ 0.85.
+
 ---
 
 ## Math Foundations
