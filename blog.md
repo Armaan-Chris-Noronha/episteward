@@ -30,11 +30,67 @@ EpiSteward makes the agent live with delayed consequences.
 
 We didn't want a toy environment. We wanted something a pharmacology PhD would recognize.
 
-**Two-compartment population PK** with inter-individual variability — different patients metabolize the same drug differently. **Itô SDE for resistance evolution** replacing deterministic Wright-Fisher with stochastic dynamics so the agent learns robust policies. **Mutant Selection Window** — between MIC and MPC, drugs paradoxically amplify resistant mutants. No other RL environment models this.
+### Pharmacokinetics — Different Patients, Different Drugs
 
-**Horizontal Gene Transfer** — antibiotic stress increases plasmid transfer rate via the SOS response, so a "safe" prescription can accelerate resistance spread between species. **Bayesian pathogen inference** — the agent maintains a posterior over five pathogens and decides whether ordering tests is worth the cost.
+The same antibiotic does not behave the same way in every patient. Age, kidney function, and individual variability all affect how drug concentrations change inside the body.
 
-And **game theory**:
+We modeled this with a two-compartment ODE system with inter-individual variability:
+
+```
+dC₁/dt = (F·D·kₐ·exp(−kₐ·t))/V₁ − (k₁₂ + k₁₀)·C₁ + k₂₁·(V₂/V₁)·C₂
+dC₂/dt = k₁₂·C₁ − k₂₁·C₂
+
+θᵢ = θ_pop · exp(ηᵢ)     ηᵢ ~ N(0, ω²)
+```
+
+An elderly patient with kidney disease metabolizes meropenem differently from a healthy 30-year-old. The agent sees creatinine and age, and must learn to adjust dosing.
+
+### The Mutant Selection Window — The Piece No Other RL Environment Models
+
+Between MIC (the concentration that kills susceptible bacteria) and MPC (the concentration that kills resistant mutants too), there's a danger zone. Drugs sitting in this window kill susceptibles but selectively amplify resistant mutants.
+
+```
+MPC = MIC × (1 / mutation_freq)^(1 / hill_coeff)
+MSW risk = T_MSW / T_total
+```
+
+The agent learns to dose above MPC when possible — collapsing the window — or pick antibiotics with a higher MPC/MIC ratio. No other RL environment captures this.
+
+### Stochastic Resistance Evolution
+
+Biology is not perfectly predictable. Two similar treatment decisions may not produce identical outcomes. We replaced the deterministic Wright-Fisher model with an Itô stochastic differential equation:
+
+```
+dp_R = s(C) · p_R · (1 − p_R) · dt + σ · √(p_R · (1 − p_R)) · dW
+```
+
+This forces the agent to learn robust policies, not memorize deterministic answers.
+
+### Horizontal Gene Transfer
+
+Resistance doesn't stay in one species. Plasmids carry it between bacteria — and antibiotic stress paradoxically accelerates the transfer through the SOS response:
+
+```
+γ(C) = γ_baseline · (1 + α_SOS · C/MIC)
+```
+
+A well-intentioned prescription can accelerate resistance spread between species. This is the mechanism behind carbapenem-resistant Klebsiella spreading from E. coli in real hospital wards.
+
+### Bayesian Pathogen Inference
+
+The agent maintains a probability distribution over five pathogens, updated as diagnostic results arrive:
+
+```
+P(pathogen=k | obs) ∝ L(obs | k) · P(pathogen=k)
+```
+
+Ordering tests reduces Shannon entropy. Value of Information determines whether a test is worth its cost. The agent learns when to commit and when to gather more evidence.
+
+### Game Theory — The Heart of the Problem
+
+Antibiotic resistance is not only a biological problem. It is a coordination problem. Each doctor wants to protect the patient in front of them. That is completely understandable. But if everyone always uses the strongest antibiotic as their default safety strategy, the shared antibiotic ecosystem deteriorates.
+
+Each ward's prescribing intensity σᵢ ∈ [0,1] enters a strategic game:
 
 ```
 Uᵢ = (f_min + (f_max − f_min)·σᵢ) − αᵢ·σᵢ·(1 + β·mean(σ_{−ᵢ}))
@@ -42,7 +98,7 @@ Uᵢ = (f_min + (f_max − f_min)·σᵢ) − αᵢ·σᵢ·(1 + β·mean(σ_{�
 PoA = ΣUᵢ(Nash) / ΣUᵢ(Social Optimum)
 ```
 
-Each ward acting selfishly converges on broad-spectrum prescribing. The Price of Anarchy measures the cost. The agent's goal is to push PoA toward 1.0 — recovering value lost to the tragedy of the commons.
+The Nash equilibrium of every ward acting selfishly is everyone using broad-spectrum antibiotics. The Price of Anarchy measures how much value is lost. The agent's goal is to push PoA toward 1.0 — recovering value lost to the tragedy of the commons.
 
 ## What Training Showed
 
