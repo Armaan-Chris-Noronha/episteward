@@ -74,9 +74,10 @@ crisis is across the ward.
 | Agent | Task 1 Triage | Task 2 Containment | Task 3 Outbreak | Task 4 Multi-Ward |
 |---|---|---|---|---|
 | Random baseline | ~0.10 | ~0.10 | ~0.10 | ~0.10 |
-| Trained agent (Qwen2.5-3B, GRPO) | TBD | TBD | TBD | TBD |
+| Qwen2.5-72B-Instruct (zero-shot) | 0.229 | 0.874 | 0.387 | 0.329 |
+| Trained agent (Qwen2.5-3B, GRPO) | — | — | — | — |
 
-*(Updated after training run)*
+*Zero-shot scores from Qwen2.5-72B-Instruct via HF Inference API. GRPO fine-tuned Qwen2.5-3B scores to be published after training run completes.*
 
 ---
 
