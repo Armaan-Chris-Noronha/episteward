@@ -67,9 +67,6 @@ crisis is across the ward.
 ![Reward Curves](assets/demo_reward_curves.png)
 *GRPO training over 500 steps — total reward, de-escalation rate, broad-spectrum usage, and Price of Anarchy all improving simultaneously.*
 
-![Price of Anarchy](assets/demo_poa.png)
-*PoA drops from ~2.4 to ~1.3 — the agent recovers value lost to the tragedy of the commons in multi-ward prescribing.*
-
 ---
 
 ## Results
