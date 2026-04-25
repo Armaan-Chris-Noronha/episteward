@@ -64,7 +64,7 @@ crisis is across the ward.
 
 ## Training Evidence
 
-![Reward Curves](assets/demo_reward_curves.png)
+![Reward Curves](https://raw.githubusercontent.com/Armaan-Chris-Noronha/episteward/main/assets/demo_reward_curves.png)
 *GRPO training over 500 steps — total reward, de-escalation rate, broad-spectrum usage, and Price of Anarchy all improving simultaneously.*
 
 ---

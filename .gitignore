@@ -9,3 +9,4 @@ build/
 venv/
 *.pkl
 *.log
+assets/
