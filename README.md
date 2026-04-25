@@ -24,7 +24,7 @@ RL agent to make better ones.
 | HuggingFace Space | https://huggingface.co/spaces/armaancn/episteward_openenv |
 | Training Notebook (Colab) | https://colab.research.google.com/drive/1t1JMl2Iqc5T7w5noUS1C-kwoTr-PnHh4?usp=sharing |
 | Code Repository | https://github.com/Armaan-Chris-Noronha/episteward |
-| Blog Post | REPLACE_WITH_HF_BLOG_URL |
+| Blog Post | https://github.com/Armaan-Chris-Noronha/episteward/blob/main/blog.md |
 
 ---
 
