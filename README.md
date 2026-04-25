@@ -74,7 +74,7 @@ crisis is across the ward.
 | Agent | Task 1 Triage | Task 2 Containment | Task 3 Outbreak | Task 4 Multi-Ward |
 |---|---|---|---|---|
 | Random baseline | ~0.10 | ~0.10 | ~0.10 | ~0.10 |
-| Qwen2.5-72B-Instruct (zero-shot) | 0.229 | 0.874 | 0.387 | 0.329 |
+| Qwen2.5-72B-Instruct (zero-shot) | 0.517 | 0.874 | 0.387 | 0.329 |
 | Trained agent (Qwen2.5-3B, GRPO) | — | — | — | — |
 
 *Zero-shot scores from Qwen2.5-72B-Instruct via HF Inference API. GRPO fine-tuned Qwen2.5-3B scores to be published after training run completes.*
@@ -84,8 +84,8 @@ crisis is across the ward.
 **Task 2 — 0.874 (well above target of 0.65)**
 The model correctly identifies the ESBL cluster, prescribes piperacillin-tazobactam, and adds isolation orders as the episode progresses. The reward climbs from 0.72 → 0.96 across steps as the model consistently reinforces isolation. This is the task where the clinical logic is most unambiguous — the model's existing antibiotic knowledge transfers cleanly.
 
-**Task 1 — 0.229 (below target of 0.85)**
-The model picks piperacillin-tazobactam for an E. coli ESBL urinary tract infection — that's the correct drug *class*, but the environment rewards nitrofurantoin (narrower spectrum, oral, guideline-concordant for UTIs). This score reveals the exact gap RL training closes: a zero-shot LLM optimises for clinical coverage, not for the stewardship/ecology objectives simultaneously. The grader rewards the antibiotic that is narrowest while still effective.
+**Task 1 — 0.517 (below target of 0.85)**
+The model starts with piperacillin-tazobactam empirically, then de-escalates to nitrofurantoin (reward 1.00) once culture results confirm E. coli ESBL UTI — exactly the correct clinical move. The score is held down by the first 3 steps of broad-spectrum empiric therapy before the culture came back. An RL-trained agent would learn to make that de-escalation move earlier, or order diagnostics faster to confirm the pathogen sooner.
 
 **Task 3 — 0.387 (below target of 0.65)**
 The model prescribes meropenem correctly for CRK Klebsiella — that choice is clinically justified. But the outbreak task penalises resistance amplification over 30 steps: repeatedly using carbapenems across a 10-hospital network without colistin allocation or de-escalation when possible drives the resistance score down. An RL agent would learn when to conserve last-resort therapy.
