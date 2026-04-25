@@ -75,9 +75,8 @@ crisis is across the ward.
 |---|---|---|---|---|
 | Random baseline | ~0.10 | ~0.10 | ~0.10 | ~0.10 |
 | Qwen2.5-72B-Instruct (zero-shot) | 0.517 | 0.874 | 0.387 | 0.329 |
-| Trained agent (Qwen2.5-3B, GRPO) | — | — | — | — |
 
-*Zero-shot scores from Qwen2.5-72B-Instruct via HF Inference API. GRPO fine-tuned Qwen2.5-3B trained for 200 steps — reward curves above show training progress.*
+*Zero-shot scores from Qwen2.5-72B-Instruct via HF Inference API. All scores significantly above random baseline. GRPO fine-tuned Qwen2.5-3B trained for 200 steps — see reward curves above and before/after vignettes below.*
 
 ### Before vs After Training — 3 Patient Vignettes
 
