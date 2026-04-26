@@ -61,13 +61,13 @@ The agent plays coordinator across 5 wards simultaneously. Each ward has its own
 
 ## The Science
 
-We didn't want a toy environment. We wanted something a pharmacology PhD would recognize.
+I didn't want a toy environment. I wanted something a pharmacology PhD would recognize.
 
 ### Pharmacokinetics — Different Patients, Different Drugs
 
 The same antibiotic does not behave the same way in every patient. Age, kidney function, and individual variability all affect how drug concentrations change inside the body.
 
-We modeled this with a two-compartment ODE system with inter-individual variability:
+I modeled this with a two-compartment ODE system with inter-individual variability:
 
 ```
 dC₁/dt = (F·D·kₐ·exp(−kₐ·t))/V₁ − (k₁₂ + k₁₀)·C₁ + k₂₁·(V₂/V₁)·C₂
@@ -91,7 +91,7 @@ The agent learns to dose above MPC when possible — collapsing the window — o
 
 ### Stochastic Resistance Evolution
 
-Biology is not perfectly predictable. Two similar treatment decisions may not produce identical outcomes. We replaced the deterministic Wright-Fisher model with an Itô stochastic differential equation:
+Biology is not perfectly predictable. Two similar treatment decisions may not produce identical outcomes. I replaced the deterministic Wright-Fisher model with an Itô stochastic differential equation:
 
 ```
 dp_R = s(C) · p_R · (1 − p_R) · dt + σ · √(p_R · (1 − p_R)) · dW
@@ -137,7 +137,7 @@ The Nash equilibrium of every ward acting selfishly is everyone using broad-spec
 
 ## Training Evidence
 
-We trained Qwen2.5-3B-Instruct using GRPO (same algorithm as DeepSeek-R1) for 200 steps on a T4 GPU via Unsloth + HF TRL. The training loop connects directly to EpiSteward in-process — the reward function is a live environment step, not a static dataset.
+I trained Qwen2.5-3B-Instruct using GRPO (same algorithm as DeepSeek-R1) for 200 steps on a T4 GPU via Unsloth + HF TRL. The training loop connects directly to EpiSteward in-process — the reward function is a live environment step, not a static dataset.
 
 ![Training curves — total reward, de-escalation rate, broad-spectrum usage, and PoA improvement across 200 GRPO steps](https://raw.githubusercontent.com/Armaan-Chris-Noronha/episteward/main/assets/demo_reward_curves.png)
 *Total reward, de-escalation rate, broad-spectrum usage, and PoA improvement across 200 GRPO training steps on a T4 GPU.*
