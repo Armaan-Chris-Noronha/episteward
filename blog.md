@@ -22,6 +22,21 @@ That is exactly the kind of problem reinforcement learning was built for. EpiSte
 
 ---
 
+## Bonus Prize Categories
+
+EpiSteward is submitted for three bonus prizes alongside the main OpenEnv themes:
+
+**Fleet AI — Oversight Agents**
+Every action the agent takes is monitored in real-time by a dedicated `OversightAgent`. It flags unsafe prescribing patterns — carbapenem use without resistance justification, missed de-escalation opportunities, duration exceeding evidence-based guidelines, sustained Mutant Selection Window exposure, and rising ward-level plasmid transfer risk. A `critical` flag applies a −0.15 reward penalty directly in the environment. The agent learns to avoid these flags not because it is told to, but because unsafe prescribing is penalised in the reward signal.
+
+**Snorkel AI — Experts-in-the-Loop**
+A simulated Infectious Disease specialist provides feedback on every action, but the feedback is not static. The specialist's stance shifts dynamically: conservative when resistance pressure is low, aggressive during active outbreaks. The exact same antibiotic prescription receives opposite feedback depending on the current ward state. This is what the agent must learn to adapt to — not fixed rules, but an evolving expert preference. Specialist alignment contributes directly to the reward signal.
+
+**Scaler AI Labs — Multi-App Enterprise Workflow**
+The agent does not just prescribe — it routes every action to the correct enterprise system. Culture orders go to the Lab app. Isolation orders go to the EHR. Antibiotic prescriptions go to the Pharmacy (with pre-authorisation rules for carbapenems). Resistance surveillance queries go to Microbiology. Correct routing earns a reward bonus; stale antibiogram data and missing pre-authorisation are penalised. EpiSteward treats the hospital as an enterprise workflow, not just a clinical decision.
+
+---
+
 ## What the agent sees, does, and gets rewarded for
 
 EpiSteward is an OpenEnv reinforcement learning environment where an AI agent acts as an antibiotic steward in a 5-ward hospital.
