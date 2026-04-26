@@ -23,6 +23,7 @@ RL agent to make better ones.
 |---|---|
 | HuggingFace Space | https://huggingface.co/spaces/armaancn/episteward_openenv |
 | Training Notebook (Colab) | https://colab.research.google.com/drive/1t1JMl2Iqc5T7w5noUS1C-kwoTr-PnHh4?usp=sharing |
+| W&B Training Run | https://wandb.ai/armaanchrisn-manipal-institute-of-technology/episteward/runs/e2op5yo3 |
 | Code Repository | https://github.com/Armaan-Chris-Noronha/episteward |
 | Blog Post | https://github.com/Armaan-Chris-Noronha/episteward/blob/main/blog.md |
 
